@@ -1,0 +1,25 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Python files
+*.py text eol=lf
+
+# Batch files
+*.bat text eol=crlf
+
+# Markdown files
+*.md text eol=lf
+
+# CSV files
+*.csv text eol=lf
+
+# JSON files
+*.json text eol=lf
+
+# YAML files
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Git files
+.gitignore text eol=lf
+.gitattributes text eol=lf

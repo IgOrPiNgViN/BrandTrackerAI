@@ -1,0 +1,455 @@
+#!/usr/bin/env python3
+"""
+Многопоточный парсер отзывов с Yandex карт с поддержкой пагинации
+"""
+
+import requests
+import re
+import time
+import random
+import os
+from typing import List, Dict, Optional
+from bs4 import BeautifulSoup
+import logging
+from datetime import datetime
+import csv
+from core.config import HEADERS, REQUEST_DELAY_SECONDS
+
+class MultiPageYandexParser:
+    """Многопоточный парсер отзывов с Yandex карт с поддержкой пагинации"""
+
+    def __init__(self):
+        self.session = requests.Session()
+        self.session.headers.update(HEADERS)
+        self.logger = logging.getLogger('MultiPageYandexParser')
+        # Очищаем старые CSV файлы при инициализации
+        self._cleanup_old_csv_files()
+
+    def parse_reviews_from_url(self, url: str, limit: int = 150, max_pages: int = 5) -> List[Dict]:
+        """Парсинг отзывов с автообновлением HTML файла и поддержкой пагинации"""
+        self.logger.info(f"🌐 Парсинг отзывов с URL: {url} (лимит: {limit}, страниц: {max_pages})")
+        
+        # Извлекаем ID бизнеса
+        business_id = self._extract_business_id(url)
+        if not business_id:
+            self.logger.error("❌ Не удалось извлечь ID бизнеса из URL")
+            return []
+        
+        all_reviews = []
+        review_counter = 0  # Глобальный счетчик для уникальных ID
+        
+        # Загружаем несколько страниц
+        for page in range(1, max_pages + 1):
+            if len(all_reviews) >= limit:
+                self.logger.info(f"⏹️ Достигнут лимит отзывов: {limit}")
+                break
+                
+            page_url = self._build_page_url(url, page)
+            self.logger.info(f"📄 Загружаем страницу {page}: {page_url}")
+            
+            # Скачиваем страницу
+            html_content = self._download_page(page_url)
+            if not html_content:
+                self.logger.warning(f"⚠️ Не удалось скачать страницу {page}")
+                continue
+            
+            # Парсим отзывы со страницы
+            page_reviews = self._extract_reviews_from_html(html_content, business_id, limit - len(all_reviews), review_counter)
+            
+            # Обновляем счетчик
+            review_counter += len(page_reviews)
+            all_reviews.extend(page_reviews)
+            
+            self.logger.info(f"📊 Страница {page}: найдено {len(page_reviews)} отзывов, всего: {len(all_reviews)}")
+            
+            # Задержка между страницами
+            if page < max_pages:
+                delay = random.uniform(REQUEST_DELAY_SECONDS, REQUEST_DELAY_SECONDS * 2)
+                time.sleep(delay)
+        
+        self.logger.info(f"✅ Всего найдено отзывов: {len(all_reviews)}")
+        return all_reviews
+
+    def _extract_business_id(self, url: str) -> Optional[str]:
+        """Извлечение ID бизнеса из URL"""
+        match = re.search(r'/org/[^/]+/(\d+)', url)
+        return match.group(1) if match else None
+
+    def _build_page_url(self, base_url: str, page: int) -> str:
+        """Построение URL для конкретной страницы"""
+        # Убираем существующие параметры пагинации
+        base_url = re.sub(r'[?&]page=\d+', '', base_url)
+        base_url = re.sub(r'[?&]p=\d+', '', base_url)
+        
+        # Добавляем параметр страницы
+        separator = '&' if '?' in base_url else '?'
+        return f"{base_url}{separator}page={page}"
+
+    def _download_page(self, url: str) -> Optional[str]:
+        """Скачивание страницы с повторными попытками"""
+        try:
+            response = self.session.get(url, timeout=10)
+            response.raise_for_status()
+            
+            # Проверяем, что не получили защиту от ботов
+            if "Обнаружена защита от ботов" in response.text:
+                self.logger.warning("⚠️ Обнаружена защита от ботов")
+                return None
+                
+            return response.text
+            
+        except Exception as e:
+            self.logger.warning(f"❌ Ошибка скачивания {url}: {e}")
+            return None
+
+    def _extract_reviews_from_html(self, html_content: str, business_id: str, limit: int, start_counter: int = 0) -> List[Dict]:
+        """Извлечение отзывов из HTML"""
+        soup = BeautifulSoup(html_content, 'html.parser')
+        reviews = []
+        
+        # Ищем блоки отзывов
+        review_blocks = soup.find_all('div', class_='business-review-view')
+        
+        if not review_blocks:
+            # Пробуем альтернативные селекторы
+            review_blocks = soup.find_all('div', class_=re.compile(r'review'))
+        
+        self.logger.debug(f"🔍 Найдено блоков отзывов: {len(review_blocks)}")
+        
+        for block in review_blocks:
+            if len(reviews) >= limit:
+                break
+                
+            try:
+                # Извлекаем текст отзыва
+                text_element = block.find('span', class_='business-review-view__body-text')
+                if not text_element:
+                    text_element = block.find('div', class_=re.compile(r'text|body|content'))
+                
+                if text_element:
+                    text = text_element.get_text(strip=True)
+                    
+                    # Проверяем, что это отзыв гостя
+                    if self._is_guest_review(text):
+                        # Извлекаем данные
+                        author = self._extract_author(block)
+                        rating = self._extract_rating(block)
+                        date = self._extract_date(block)
+                        
+                        # Нормализуем данные
+                        author = self._clean_author_name(author)
+                        date = self._clean_date_text(date)
+                        
+                        # Используем глобальный счетчик для уникальных ID
+                        review_id = f"{business_id}_{start_counter + len(reviews)}"
+                        
+                        review = {
+                            'id': review_id,
+                            'text': text,
+                            'rating': rating,
+                            'author': author,
+                            'date': date,
+                            'source': 'Yandex'
+                        }
+                        
+                        reviews.append(review)
+                        self.logger.debug(f"✅ Найден отзыв {len(reviews)}/{limit}: {text[:50]}...")
+                        
+            except Exception as e:
+                self.logger.debug(f"Ошибка обработки блока: {e}")
+                continue
+        
+        return reviews
+
+    def _is_guest_review(self, text: str) -> bool:
+        """Проверка, что это отзыв гостя (не ответ ресторана)"""
+        text_lower = text.lower()
+        
+        # Исключаем ответы ресторана
+        restaurant_response_keywords = [
+            'спасибо за отзыв', 'благодарим за отзыв', 'рады что вам понравилось',
+            'приносим извинения', 'мы работаем над', 'наша команда',
+            'администрация ресторана', 'менеджер ресторана', 'управляющий',
+            'мы ценим', 'мы стремимся', 'наша цель', 'мы стараемся'
+        ]
+        
+        if any(keyword in text_lower for keyword in restaurant_response_keywords):
+            return False
+        
+        # Проверяем, что это не служебный текст
+        not_service_text = not any(service_word in text_lower for service_word in [
+            'cookie', 'javascript', 'script', 'function', 'var ', 'let ', 'const ',
+            'html', 'css', 'class=', 'id=', 'href=', 'src=', 'alt=',
+            'yandex', 'maps', 'api', 'json', 'xml', 'http', 'https'
+        ])
+        
+        # Проверяем структуру текста и длину
+        has_sentences = '.' in text or '!' in text or '?' in text
+        has_spaces = ' ' in text
+        not_too_short = len(text) > 50
+        not_too_long = len(text) < 1000
+        
+        return (has_sentences and has_spaces and not_too_short and not_too_long and not_service_text)
+
+    def _extract_author(self, block) -> str:
+        """Извлечение автора"""
+        try:
+            # Сначала ищем точное имя автора
+            author_name_element = block.find('div', class_='business-review-view__author-name')
+            if author_name_element:
+                author_name = author_name_element.get_text(strip=True)
+                if author_name and len(author_name) > 0:
+                    return author_name
+            
+            # Если не найдено, ищем в общем блоке автора
+            author_element = block.find('div', class_='business-review-view__author')
+            if author_element:
+                author_text = author_element.get_text(strip=True)
+                cleaned = self._clean_author_name(author_text)
+                if cleaned:
+                    return cleaned
+            
+            # Альтернативный поиск
+            author_container = block.find('div', class_='business-review-view__author-container')
+            if author_container:
+                author_text = author_container.get_text(strip=True)
+                cleaned = self._clean_author_name(author_text)
+                if cleaned:
+                    return cleaned
+                    
+            return "Аноним"
+        except:
+            return "Аноним"
+
+    def _clean_author_name(self, author_text: str) -> str:
+        """Очистка имени автора"""
+        try:
+            # Убираем лишний текст
+            unwanted_patterns = [
+                r'Дегустатор\s+\d+\s+уровня',
+                r'Подписаться',
+                r'Yandex',
+                r'\+',
+                r',+',
+                r'\s+',
+                r'^\s+|\s+$'
+            ]
+            cleaned = author_text
+            for pattern in unwanted_patterns:
+                cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+            
+            # Убираем лишние пробелы и нормализуем
+            cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+            
+            # Проверяем, что осталось что-то разумное
+            if cleaned and len(cleaned) > 1 and len(cleaned) < 50 and re.search(r'[а-яёА-ЯЁa-zA-Z]', cleaned):
+                return cleaned
+            return ""
+        except:
+            return ""
+
+    def _extract_rating(self, block) -> int:
+        """Извлечение рейтинга"""
+        try:
+            # Ищем группы звёзд
+            star_groups = block.find_all(['div', 'span'], class_='business-rating-badge-view__stars')
+            if star_groups:
+                for group in star_groups:
+                    # Проверяем aria-label
+                    aria_label = group.get('aria-label', '')
+                    if 'Оценка' in aria_label and 'Из 5' in aria_label:
+                        rating_match = re.search(r'Оценка (\d+) Из 5', aria_label)
+                        if rating_match:
+                            rating = int(rating_match.group(1))
+                            if 1 <= rating <= 5:
+                                return rating
+                    
+                    # Подсчитываем заполненные звёзды
+                    full_stars = group.find_all(['span', 'div'], class_='business-rating-badge-view__star _full')
+                    if full_stars:
+                        return len(full_stars)
+            
+            return 0
+        except:
+            return 0
+
+    def _extract_date(self, block) -> str:
+        """Извлечение даты"""
+        try:
+            date_element = block.find(['div', 'span'], class_='business-review-view__date')
+            if date_element:
+                date_text = date_element.get_text(strip=True)
+                cleaned_date = self._clean_date_text(date_text)
+                if cleaned_date:
+                    return cleaned_date
+            
+            # Если дата не найдена, возвращаем текущую дату
+            from datetime import datetime
+            return datetime.now().strftime('%Y-%m-%d')
+        except:
+            # В случае ошибки возвращаем текущую дату
+            from datetime import datetime
+            return datetime.now().strftime('%Y-%m-%d')
+
+    def _clean_date_text(self, date_text: str) -> str:
+        """Очистка текста даты и конвертация в числовой формат YYYY-MM-DD"""
+        try:
+            # Если уже в правильном формате YYYY-MM-DD, возвращаем как есть
+            if re.match(r'^\d{4}-\d{2}-\d{2}$', date_text.strip()):
+                return date_text.strip()
+            
+            # Паттерны для поиска даты (русские и английские)
+            date_patterns = [
+                r'\d{1,2}\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря|january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{4}',
+                r'\d{1,2}\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря|january|february|march|april|may|june|july|august|september|october|november|december)',
+                r'\d{1,2}\.\d{1,2}\.\d{4}',
+                r'(вчера|сегодня|позавчера)',
+                r'\d+\s+(дня|дней|недели|недель|месяца|месяцев|года|лет)\s+назад'
+            ]
+            
+            for pattern in date_patterns:
+                match = re.search(pattern, date_text, re.IGNORECASE)
+                if match:
+                    found_date = match.group(0)
+                    # Конвертируем в числовой формат
+                    return self._convert_to_numeric_date(found_date)
+            
+            # Если ничего не найдено, возвращаем текущую дату
+            from datetime import datetime
+            return datetime.now().strftime('%Y-%m-%d')
+        except:
+            # В случае ошибки возвращаем текущую дату
+            from datetime import datetime
+            return datetime.now().strftime('%Y-%m-%d')
+
+    def _convert_to_numeric_date(self, date_text: str) -> str:
+        """Конвертация текстовой даты в числовой формат YYYY-MM-DD"""
+        try:
+            from datetime import datetime, timedelta
+            
+            # Словарь месяцев (русские и английские)
+            months = {
+                'января': 1, 'февраля': 2, 'марта': 3, 'апреля': 4,
+                'мая': 5, 'июня': 6, 'июля': 7, 'августа': 8,
+                'сентября': 9, 'октября': 10, 'ноября': 11, 'декабря': 12,
+                'january': 1, 'february': 2, 'march': 3, 'april': 4,
+                'may': 5, 'june': 6, 'july': 7, 'august': 8,
+                'september': 9, 'october': 10, 'november': 11, 'december': 12
+            }
+            
+            # Обработка относительных дат
+            if 'сегодня' in date_text.lower():
+                return datetime.now().strftime('%Y-%m-%d')
+            elif 'вчера' in date_text.lower():
+                yesterday = datetime.now() - timedelta(days=1)
+                return yesterday.strftime('%Y-%m-%d')
+            elif 'позавчера' in date_text.lower():
+                day_before_yesterday = datetime.now() - timedelta(days=2)
+                return day_before_yesterday.strftime('%Y-%m-%d')
+            
+            # Обработка "X дней назад"
+            days_ago_match = re.search(r'(\d+)\s+(дня|дней)\s+назад', date_text.lower())
+            if days_ago_match:
+                days = int(days_ago_match.group(1))
+                past_date = datetime.now() - timedelta(days=days)
+                return past_date.strftime('%Y-%m-%d')
+            
+            # Обработка "X недель назад"
+            weeks_ago_match = re.search(r'(\d+)\s+(недели|недель)\s+назад', date_text.lower())
+            if weeks_ago_match:
+                weeks = int(weeks_ago_match.group(1))
+                past_date = datetime.now() - timedelta(weeks=weeks)
+                return past_date.strftime('%Y-%m-%d')
+            
+            # Обработка "X месяцев назад"
+            months_ago_match = re.search(r'(\d+)\s+(месяца|месяцев)\s+назад', date_text.lower())
+            if months_ago_match:
+                months_count = int(months_ago_match.group(1))
+                # Приблизительно 30 дней в месяце
+                past_date = datetime.now() - timedelta(days=months_count * 30)
+                return past_date.strftime('%Y-%m-%d')
+            
+            # Обработка "X лет назад"
+            years_ago_match = re.search(r'(\d+)\s+(года|лет)\s+назад', date_text.lower())
+            if years_ago_match:
+                years = int(years_ago_match.group(1))
+                past_date = datetime.now() - timedelta(days=years * 365)
+                return past_date.strftime('%Y-%m-%d')
+            
+            # Обработка полной даты с годом: "2 мая 2024"
+            full_date_match = re.search(r'(\d{1,2})\s+(\w+)\s+(\d{4})', date_text)
+            if full_date_match:
+                day = int(full_date_match.group(1))
+                month_name = full_date_match.group(2).lower()
+                year = int(full_date_match.group(3))
+                
+                if month_name in months:
+                    month = months[month_name]
+                    return f"{year:04d}-{month:02d}-{day:02d}"
+            
+            # Обработка даты без года: "2 мая" (предполагаем текущий год)
+            date_without_year_match = re.search(r'(\d{1,2})\s+(\w+)', date_text)
+            if date_without_year_match:
+                day = int(date_without_year_match.group(1))
+                month_name = date_without_year_match.group(2).lower()
+                
+                if month_name in months:
+                    month = months[month_name]
+                    current_year = datetime.now().year
+                    return f"{current_year:04d}-{month:02d}-{day:02d}"
+            
+            # Обработка формата DD.MM.YYYY
+            dot_date_match = re.search(r'(\d{1,2})\.(\d{1,2})\.(\d{4})', date_text)
+            if dot_date_match:
+                day = int(dot_date_match.group(1))
+                month = int(dot_date_match.group(2))
+                year = int(dot_date_match.group(3))
+                return f"{year:04d}-{month:02d}-{day:02d}"
+            
+            # Если ничего не подошло, возвращаем исходный текст
+            return date_text
+            
+        except Exception as e:
+            self.logger.debug(f"Ошибка конвертации даты '{date_text}': {e}")
+            return date_text
+
+    def save_reviews_to_csv(self, reviews: List[Dict], filename: str):
+        """Обновление отзывов в CSV (перезапись файла)"""
+        if not reviews:
+            self.logger.warning("Нет отзывов для сохранения")
+            return
+        
+        try:
+            fieldnames = ['id', 'text', 'rating', 'author', 'date', 'source']
+            
+            # Удаляем старый CSV файл если существует
+            if os.path.exists(filename):
+                os.remove(filename)
+                self.logger.info(f"🗑️ Удален старый CSV файл: {filename}")
+            
+            # Создаем новый CSV файл с актуальными данными
+            with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(reviews)
+            
+            self.logger.info(f"💾 Обновлен CSV файл: {filename} ({len(reviews)} отзывов)")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Ошибка обновления CSV: {e}")
+
+    def _cleanup_old_csv_files(self):
+        """Очистка старых CSV файлов в папке reviews_data"""
+        try:
+            reviews_data_dir = "reviews_data"
+            if os.path.exists(reviews_data_dir):
+                csv_files = [f for f in os.listdir(reviews_data_dir) if f.endswith('.csv')]
+                for csv_file in csv_files:
+                    file_path = os.path.join(reviews_data_dir, csv_file)
+                    os.remove(file_path)
+                    self.logger.info(f"🗑️ Удален старый CSV файл: {file_path}")
+
+                if csv_files:
+                    self.logger.info(f"🧹 Очищено {len(csv_files)} старых CSV файлов")
+        except Exception as e:
+            self.logger.debug(f"Ошибка очистки старых CSV: {e}")
