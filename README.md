@@ -110,12 +110,14 @@
 ├── logs/                      # Логи (не в git)
 │   └── parser.log             # Лог файл парсера
 │
-├── scripts/                   # Скрипты установки
+├── scripts/                   # Скрипты
+│   ├── analyze_reviews.py     # NLP анализ отзывов
 │   ├── setup.bat              # Установка для Windows
 │   └── setup.sh               # Установка для Linux/Mac
 │
 ├── docs/                      # Документация
-│   └── analytics_reviews.ipynb # Jupyter ноутбук для анализа
+│   ├── analytics_reviews.ipynb # Jupyter ноутбук для анализа
+│   └── nlp_visualization.ipynb  # Визуализация NLP анализа
 │
 └── tests/                     # Тесты (будущее)
     └── (тесты будут добавлены)
@@ -200,15 +202,15 @@ python api/test_api.py
 
 ```bash
 # Базовый анализ
-python analyze_reviews.py --input data/all_reviews.csv
+python scripts/analyze_reviews.py --input data/all_reviews.csv
 
 # С указанием колонок
-python analyze_reviews.py --input data/all_reviews.csv \
+python scripts/analyze_reviews.py --input data/all_reviews.csv \
   --text-column text \
   --rating-column rating
 
 # С сохранением отчета
-python analyze_reviews.py --input data/all_reviews.csv \
+python scripts/analyze_reviews.py --input data/all_reviews.csv \
   --output data/analyzed_reviews.csv \
   --report reports/analysis_report.txt
 ```

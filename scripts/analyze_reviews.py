@@ -10,6 +10,11 @@ import sys
 import os
 import pandas as pd
 from datetime import datetime
+
+# Добавляем корневую папку проекта в путь
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, project_root)
+
 from nlp.review_analyzer import ReviewAnalyzer
 
 def main():
