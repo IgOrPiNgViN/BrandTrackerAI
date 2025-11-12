@@ -40,7 +40,8 @@ ENV/
 
 # Jupyter Notebook
 .ipynb_checkpoints
-*.ipynb
+# Разрешаем .ipynb файлы в папке docs
+!docs/*.ipynb
 
 # Logs
 *.log
