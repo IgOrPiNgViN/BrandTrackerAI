@@ -71,24 +71,46 @@
 
 ```
 ├── main.py                    # Основной файл запуска
-├── api/                      # API сервер
-│   ├── api_server.py         # FastAPI сервер
-│   ├── test_api.py           # Тесты API
-│   └── start_api.bat         # Запуск API сервера
-├── core/                     # Основные модули
-│   ├── base_parser.py        # Базовый класс парсера
-│   ├── config.py             # Конфигурация
-│   ├── review_scheduler.py   # Планировщик и многопоточность
-│   └── requirements.txt      # Зависимости
-├── parsers/                  # Парсеры
+├── requirements.txt           # Зависимости проекта
+├── README.md                  # Документация проекта
+├── LICENSE                    # Лицензия MIT
+├── CONTRIBUTING.md            # Руководство по внесению вклада
+├── .gitignore                 # Git ignore файл
+│
+├── api/                       # API сервер
+│   ├── api_server.py          # FastAPI сервер
+│   ├── test_api.py             # Тесты API
+│   └── start_api.bat          # Запуск API сервера
+│
+├── core/                      # Основные модули
+│   ├── __init__.py            # Инициализация модуля
+│   ├── base_parser.py         # Базовый класс парсера
+│   ├── config.py              # Конфигурация
+│   ├── review_scheduler.py     # Планировщик и многопоточность
+│   └── requirements.txt      # Зависимости (дубликат корневого)
+│
+├── parsers/                   # Парсеры
+│   ├── __init__.py            # Инициализация модуля
 │   ├── multi_page_yandex_parser.py  # Парсер Yandex с пагинацией
 │   └── simple_twogis_parser.py       # Парсер 2ГИС
-├── data/                     # Данные
-│   ├── url_reviews.csv       # Отзывы с Yandex
-│   ├── twogis_reviews.csv    # Отзывы с 2ГИС
-│   └── all_reviews.csv       # Объединенный файл всех отзывов
-├── .gitignore                # Git ignore файл
-└── README.md                 # Документация проекта
+│
+├── data/                      # Данные (не в git)
+│   ├── url_reviews.csv        # Отзывы с Yandex
+│   ├── twogis_reviews.csv     # Отзывы с 2ГИС
+│   └── all_reviews.csv        # Объединенный файл всех отзывов
+│
+├── logs/                      # Логи (не в git)
+│   └── parser.log             # Лог файл парсера
+│
+├── scripts/                   # Скрипты установки
+│   ├── setup.bat              # Установка для Windows
+│   └── setup.sh               # Установка для Linux/Mac
+│
+├── docs/                      # Документация
+│   └── analytics_reviews.ipynb # Jupyter ноутбук для анализа
+│
+└── tests/                     # Тесты (будущее)
+    └── (тесты будут добавлены)
 ```
 
 ## 🛠 Установка
