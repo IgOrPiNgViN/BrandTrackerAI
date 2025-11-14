@@ -40,8 +40,10 @@ ENV/
 
 # Jupyter Notebook
 .ipynb_checkpoints
+*.ipynb
 # Разрешаем .ipynb файлы в папке docs
-!docs/*.ipynb
+!docs/
+!docs/**/*.ipynb
 
 # Logs
 *.log
@@ -61,6 +63,9 @@ Thumbs.db
 .DS_Store
 
 # Project specific
+# Разрешаем .bat файлы в api/ и scripts/
+!api/*.bat
+!scripts/*.bat
 *.bat
 reviews_data/
 output/
