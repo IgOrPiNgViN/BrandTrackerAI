@@ -50,8 +50,9 @@ ENV/
 logs/
 parser.log
 
-# Data files (опционально - раскомментируйте если не хотите загружать данные)
+# Data files - разрешаем CSV файлы в data/
 # data/*.csv
+!data/*.csv
 # reviews_data/
 
 # Environment variables
