@@ -94,7 +94,7 @@ def parallel_parse_urls(yandex_url: str, twogis_url: str):
         try:
             logger.info(f"🌐 Запуск парсинга Yandex: {yandex_url}")
             parser = MultiPageYandexParser()
-            reviews = parser.parse_reviews_from_url(yandex_url, limit=150, max_pages=5)
+            reviews = parser.parse_reviews_from_url(yandex_url, limit=5000, max_pages=30)
             parser.save_reviews_to_csv(reviews, "data/url_reviews.csv")
             logger.info(f"✅ Yandex: найдено {len(reviews)} отзывов")
             return len(reviews)
@@ -107,7 +107,7 @@ def parallel_parse_urls(yandex_url: str, twogis_url: str):
         try:
             logger.info(f"🌐 Запуск парсинга 2ГИС: {twogis_url}")
             parser = SimpleTwoGisParser()
-            reviews = parser.parse_reviews_from_url(twogis_url, limit=150)
+            reviews = parser.parse_reviews_from_url(twogis_url, limit=1000, max_pages=30)
             parser.save_reviews_to_csv(reviews, "data/twogis_reviews.csv")
             logger.info(f"✅ 2ГИС: найдено {len(reviews)} отзывов")
             return len(reviews)
@@ -225,7 +225,7 @@ def main():
                     
                     # Используем многопоточный парсер с поддержкой пагинации
                     parser = MultiPageYandexParser()
-                    reviews = parser.parse_reviews_from_url(args.url, limit=150, max_pages=5)
+                    reviews = parser.parse_reviews_from_url(args.url, limit=5000, max_pages=30)
                     parser.save_reviews_to_csv(reviews, "data/url_reviews.csv")
                     
                     # Создаем объединенный файл
@@ -251,7 +251,7 @@ def main():
                     
                     # Используем простой парсер 2ГИС
                     parser = SimpleTwoGisParser()
-                    reviews = parser.parse_reviews_from_url(args.url, limit=150)
+                    reviews = parser.parse_reviews_from_url(args.url, limit=1000, max_pages=30)
                     parser.save_reviews_to_csv(reviews, "data/twogis_reviews.csv")
                     
                     # Создаем объединенный файл

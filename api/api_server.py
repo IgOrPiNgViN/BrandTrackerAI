@@ -77,8 +77,8 @@ async def parse_reviews(request: ParseRequest):
         if not request.url:
             raise HTTPException(status_code=400, detail="URL не может быть пустым")
         
-        if request.review_amount <= 0 or request.review_amount > 500:
-            raise HTTPException(status_code=400, detail="Количество отзывов должно быть от 1 до 500")
+        if request.review_amount <= 0 or request.review_amount > 1000:
+            raise HTTPException(status_code=400, detail="Количество отзывов должно быть от 1 до 1000")
         
         # Определяем тип парсера по URL
         if 'yandex.ru' in request.url:
@@ -86,7 +86,7 @@ async def parse_reviews(request: ParseRequest):
             reviews = parser.parse_reviews_from_url(
                 request.url, 
                 limit=request.review_amount, 
-                max_pages=5
+                max_pages=30
             )
             source = "Yandex"
             
@@ -94,7 +94,8 @@ async def parse_reviews(request: ParseRequest):
             parser = SimpleTwoGisParser()
             reviews = parser.parse_reviews_from_url(
                 request.url, 
-                limit=request.review_amount
+                limit=request.review_amount,
+                max_pages=30
             )
             source = "2GIS"
             
@@ -147,8 +148,8 @@ async def parse_reviews_csv(request: ParseRequest):
         if not request.url:
             raise HTTPException(status_code=400, detail="URL не может быть пустым")
         
-        if request.review_amount <= 0 or request.review_amount > 500:
-            raise HTTPException(status_code=400, detail="Количество отзывов должно быть от 1 до 500")
+        if request.review_amount <= 0 or request.review_amount > 1000:
+            raise HTTPException(status_code=400, detail="Количество отзывов должно быть от 1 до 1000")
         
         # Определяем тип парсера по URL
         if 'yandex.ru' in request.url:
@@ -156,7 +157,7 @@ async def parse_reviews_csv(request: ParseRequest):
             reviews = parser.parse_reviews_from_url(
                 request.url, 
                 limit=request.review_amount, 
-                max_pages=5
+                max_pages=30
             )
             source = "Yandex"
             
@@ -164,7 +165,8 @@ async def parse_reviews_csv(request: ParseRequest):
             parser = SimpleTwoGisParser()
             reviews = parser.parse_reviews_from_url(
                 request.url, 
-                limit=request.review_amount
+                limit=request.review_amount,
+                max_pages=30
             )
             source = "2GIS"
             

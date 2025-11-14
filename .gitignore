@@ -51,7 +51,7 @@ logs/
 parser.log
 
 # Data files - разрешаем CSV файлы в data/
-# data/*.csv
+!data/
 !data/*.csv
 # reviews_data/
 

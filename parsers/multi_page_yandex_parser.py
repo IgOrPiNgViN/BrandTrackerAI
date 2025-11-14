@@ -25,7 +25,7 @@ class MultiPageYandexParser:
         # Очищаем старые CSV файлы при инициализации
         self._cleanup_old_csv_files()
 
-    def parse_reviews_from_url(self, url: str, limit: int = 150, max_pages: int = 5) -> List[Dict]:
+    def parse_reviews_from_url(self, url: str, limit: int = 5000, max_pages: int = 30) -> List[Dict]:
         """Парсинг отзывов с автообновлением HTML файла и поддержкой пагинации"""
         self.logger.info(f"🌐 Парсинг отзывов с URL: {url} (лимит: {limit}, страниц: {max_pages})")
         
@@ -36,33 +36,38 @@ class MultiPageYandexParser:
             return []
         
         all_reviews = []
-        review_counter = 0  # Глобальный счетчик для уникальных ID
+        review_counter = 0
+        consecutive_empty_pages = 0
         
-        # Загружаем несколько страниц
         for page in range(1, max_pages + 1):
-            if len(all_reviews) >= limit:
-                self.logger.info(f"⏹️ Достигнут лимит отзывов: {limit}")
-                break
-                
             page_url = self._build_page_url(url, page)
             self.logger.info(f"📄 Загружаем страницу {page}: {page_url}")
+            if page <= 3 or (page >= 10 and page <= 15):
+                self.logger.info(f"🔗 URL страницы {page}: {page_url}")
             
-            # Скачиваем страницу
             html_content = self._download_page(page_url)
             if not html_content:
                 self.logger.warning(f"⚠️ Не удалось скачать страницу {page}")
+                consecutive_empty_pages += 1
+                if consecutive_empty_pages >= 3:
+                    self.logger.info(f"⏹️ Прекращаем парсинг: 3 страницы подряд не удалось скачать")
+                    break
                 continue
             
-            # Парсим отзывы со страницы
-            page_reviews = self._extract_reviews_from_html(html_content, business_id, limit - len(all_reviews), review_counter)
+            page_reviews = self._extract_reviews_from_html(html_content, business_id, limit, review_counter)
             
-            # Обновляем счетчик
-            review_counter += len(page_reviews)
-            all_reviews.extend(page_reviews)
+            if len(page_reviews) == 0:
+                consecutive_empty_pages += 1
+                self.logger.warning(f"⚠️ Страница {page}: найдено 0 отзывов (пустых страниц подряд: {consecutive_empty_pages})")
+                if consecutive_empty_pages >= 3:
+                    self.logger.info(f"⏹️ Прекращаем парсинг: достигнут конец отзывов (3 пустые страницы подряд)")
+                    break
+            else:
+                consecutive_empty_pages = 0
+                review_counter += len(page_reviews)
+                all_reviews.extend(page_reviews)
+                self.logger.info(f"📊 Страница {page}: найдено {len(page_reviews)} отзывов, всего: {len(all_reviews)}")
             
-            self.logger.info(f"📊 Страница {page}: найдено {len(page_reviews)} отзывов, всего: {len(all_reviews)}")
-            
-            # Задержка между страницами
             if page < max_pages:
                 delay = random.uniform(REQUEST_DELAY_SECONDS, REQUEST_DELAY_SECONDS * 2)
                 time.sleep(delay)
@@ -80,10 +85,23 @@ class MultiPageYandexParser:
         # Убираем существующие параметры пагинации
         base_url = re.sub(r'[?&]page=\d+', '', base_url)
         base_url = re.sub(r'[?&]p=\d+', '', base_url)
+        base_url = re.sub(r'[?&]reviewsPage=\d+', '', base_url)
+        
+        # Для первой страницы возвращаем базовый URL
+        if page == 1:
+            return base_url
         
         # Добавляем параметр страницы
         separator = '&' if '?' in base_url else '?'
-        return f"{base_url}{separator}page={page}"
+        
+        # Пробуем разные варианты параметров пагинации
+        # Yandex может использовать разные форматы
+        if 'reviews' in base_url.lower():
+            # Если в URL есть "reviews", пробуем reviewsPage
+            return f"{base_url}{separator}reviewsPage={page}"
+        else:
+            # Иначе используем стандартный page
+            return f"{base_url}{separator}page={page}"
 
     def _download_page(self, url: str) -> Optional[str]:
         """Скачивание страницы с повторными попытками"""
@@ -163,6 +181,9 @@ class MultiPageYandexParser:
 
     def _is_guest_review(self, text: str) -> bool:
         """Проверка, что это отзыв гостя (не ответ ресторана)"""
+        if not text or not isinstance(text, str):
+            return False
+        
         text_lower = text.lower()
         
         # Исключаем ответы ресторана
@@ -176,20 +197,20 @@ class MultiPageYandexParser:
         if any(keyword in text_lower for keyword in restaurant_response_keywords):
             return False
         
-        # Проверяем, что это не служебный текст
+        # Проверяем, что это не служебный текст (убрали yandex, maps, http, https)
         not_service_text = not any(service_word in text_lower for service_word in [
             'cookie', 'javascript', 'script', 'function', 'var ', 'let ', 'const ',
             'html', 'css', 'class=', 'id=', 'href=', 'src=', 'alt=',
-            'yandex', 'maps', 'api', 'json', 'xml', 'http', 'https'
+            'api', 'json', 'xml'
         ])
         
-        # Проверяем структуру текста и длину
-        has_sentences = '.' in text or '!' in text or '?' in text
+        # Более мягкие проверки
         has_spaces = ' ' in text
-        not_too_short = len(text) > 50
-        not_too_long = len(text) < 1000
+        has_letters = bool(re.search(r'[а-яёА-ЯЁa-zA-Z]', text))
+        not_too_short = len(text) > 20  # Было 50
+        not_too_long = len(text) < 5000  # Было 1000
         
-        return (has_sentences and has_spaces and not_too_short and not_too_long and not_service_text)
+        return (has_spaces and has_letters and not_too_short and not_too_long and not_service_text)
 
     def _extract_author(self, block) -> str:
         """Извлечение автора"""

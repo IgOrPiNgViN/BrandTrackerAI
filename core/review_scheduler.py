@@ -46,10 +46,10 @@ class ReviewScheduler:
             try:
                 if 'yandex.ru' in url:
                     parser = MultiPageYandexParser()
-                    reviews = parser.parse_reviews_from_url(url, limit=150, max_pages=5)
+                    reviews = parser.parse_reviews_from_url(url, limit=5000, max_pages=30)
                 elif '2gis.ru' in url:
                     parser = SimpleTwoGisParser()
-                    reviews = parser.parse_reviews_from_url(url, limit=150)
+                    reviews = parser.parse_reviews_from_url(url, limit=1000, max_pages=30)
                 else:
                     self.logger.warning(f"❌ Неподдерживаемый URL: {url}")
                     return results
