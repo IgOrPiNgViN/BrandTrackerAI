@@ -9,6 +9,11 @@ beautifulsoup4==4.12.2
 
 # Работа с данными
 pandas==2.1.3
+numpy>=1.24.0
+
+# Визуализация
+matplotlib>=3.7.0
+seaborn>=0.12.0
 
 # Планировщик задач
 schedule==1.2.0
@@ -17,3 +22,8 @@ schedule==1.2.0
 fastapi==0.104.1
 uvicorn==0.24.0
 pydantic==2.5.0
+
+# Расширенная аналитика (опционально, для nlp_visualization.ipynb)
+scipy>=1.10.0
+scikit-learn>=1.3.0
+mlxtend>=0.22.0
