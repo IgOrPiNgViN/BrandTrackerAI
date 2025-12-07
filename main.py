@@ -16,6 +16,9 @@ from parsers.multi_page_yandex_parser import MultiPageYandexParser
 from parsers.simple_twogis_parser import SimpleTwoGisParser
 import pandas as pd
 
+# Флаг для автоматической генерации графиков
+AUTO_REGENERATE_CHARTS = True
+
 def setup_logging():
     """Настройка логирования"""
     logging.basicConfig(
@@ -26,6 +29,112 @@ def setup_logging():
             logging.StreamHandler(sys.stdout)
         ]
     )
+
+
+def run_notebooks():
+    """Автоматический запуск Jupyter ноутбуков после парсинга"""
+    if not AUTO_REGENERATE_CHARTS:
+        return
+    
+    logger = logging.getLogger('NotebookRunner')
+    
+    import subprocess
+    
+    # Список ноутбуков для запуска
+    notebooks = [
+        'docs/analytics_reviews.ipynb',
+        'docs/nlp_visualization.ipynb'
+    ]
+    
+    logger.info("📓 Запуск автоматического выполнения ноутбуков...")
+    
+    for notebook in notebooks:
+        if not os.path.exists(notebook):
+            logger.warning(f"⚠️ Ноутбук не найден: {notebook}")
+            continue
+        
+        try:
+            logger.info(f"📊 Выполнение: {notebook}")
+            
+            # Запускаем nbconvert для выполнения ноутбука
+            result = subprocess.run(
+                [
+                    sys.executable, '-m', 'jupyter', 'nbconvert',
+                    '--to', 'notebook',
+                    '--execute',
+                    '--inplace',
+                    '--ExecutePreprocessor.timeout=600',
+                    notebook
+                ],
+                capture_output=True,
+                text=True,
+                encoding='utf-8'
+            )
+            
+            if result.returncode == 0:
+                logger.info(f"✅ Успешно выполнен: {notebook}")
+            else:
+                logger.error(f"❌ Ошибка выполнения {notebook}: {result.stderr}")
+                
+        except FileNotFoundError:
+            logger.warning(f"⚠️ Jupyter не установлен. Установите: pip install jupyter nbconvert")
+            logger.info("📊 Запуск альтернативной генерации графиков...")
+            regenerate_charts_fallback()
+            return
+        except Exception as e:
+            logger.error(f"❌ Ошибка при выполнении {notebook}: {e}")
+    
+    logger.info("✅ Все ноутбуки успешно выполнены!")
+    logger.info("📁 Графики обновлены в: reports/images/")
+
+
+def regenerate_charts_fallback():
+    """Резервная генерация графиков (если Jupyter недоступен)"""
+    logger = logging.getLogger('ChartGenerator')
+    
+    try:
+        logger.info("📊 Запуск резервной генерации графиков...")
+        
+        from scripts.regenerate_charts import (
+            setup_directories, load_and_analyze_data,
+            generate_chart_01_sentiment, generate_chart_02_problems,
+            generate_chart_03_scores, generate_chart_04_link,
+            generate_chart_05_rating, generate_chart_06_correlation,
+            generate_chart_07_classification, generate_chart_08_clustering,
+            generate_chart_09_ensemble, generate_chart_10_association,
+            generate_chart_11_forecast
+        )
+        
+        data_path = 'data/all_reviews.csv'
+        
+        if not os.path.exists(data_path):
+            logger.warning("⚠️ Файл данных не найден")
+            return
+        
+        images_dir = setup_directories()
+        df = load_and_analyze_data(data_path)
+        
+        generate_chart_01_sentiment(df, images_dir)
+        generate_chart_02_problems(df, images_dir)
+        generate_chart_03_scores(df, images_dir)
+        generate_chart_04_link(df, images_dir)
+        generate_chart_05_rating(df, images_dir)
+        generate_chart_06_correlation(df, images_dir)
+        generate_chart_07_classification(df, images_dir)
+        generate_chart_08_clustering(df, images_dir)
+        generate_chart_09_ensemble(df, images_dir)
+        generate_chart_10_association(df, images_dir)
+        generate_chart_11_forecast(df, images_dir)
+        
+        logger.info(f"✅ Графики обновлены в {images_dir}")
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка генерации графиков: {e}")
+
+
+def regenerate_charts():
+    """Автоматическая перегенерация графиков (запуск ноутбуков)"""
+    run_notebooks()
 
 def create_unified_csv():
     """Создание единого CSV файла из всех источников"""
@@ -130,6 +239,9 @@ def parallel_parse_urls(yandex_url: str, twogis_url: str):
     # Создаем объединенный файл
     total_reviews = create_unified_csv()
     
+    # Автоматически обновляем графики
+    regenerate_charts()
+    
     logger.info(f"🎉 Параллельный парсинг завершен!")
     logger.info(f"   Yandex: {yandex_count} отзывов")
     logger.info(f"   2ГИС: {twogis_count} отзывов")
@@ -231,6 +343,9 @@ def main():
                     # Создаем объединенный файл
                     total_reviews = create_unified_csv()
                     
+                    # Автоматически обновляем графики
+                    regenerate_charts()
+                    
                     print(f"\n=== РЕЗУЛЬТАТЫ ПАРСИНГА YANDEX ===")
                     print(f"URL: {args.url}")
                     print(f"Бизнес: {business_name}")
@@ -238,6 +353,7 @@ def main():
                     print(f"Найдено отзывов: {len(reviews)}")
                     print("Отзывы сохранены в: data/url_reviews.csv")
                     print(f"Объединенный файл: data/all_reviews.csv ({total_reviews} отзывов)")
+                    print("📊 Графики обновлены в: reports/images/")
                     print("===============================\n")
                 else:
                     print("❌ Не удалось извлечь ID бизнеса из URL Yandex")
@@ -257,12 +373,16 @@ def main():
                     # Создаем объединенный файл
                     total_reviews = create_unified_csv()
                     
+                    # Автоматически обновляем графики
+                    regenerate_charts()
+                    
                     print(f"\n=== РЕЗУЛЬТАТЫ ПАРСИНГА 2ГИС ===")
                     print(f"URL: {args.url}")
                     print(f"Бизнес ID: {business_id}")
                     print(f"Найдено отзывов: {len(reviews)}")
                     print("Отзывы сохранены в: data/twogis_reviews.csv")
                     print(f"Объединенный файл: data/all_reviews.csv ({total_reviews} отзывов)")
+                    print("📊 Графики обновлены в: reports/images/")
                     print("===============================\n")
                     
                 else:
@@ -288,6 +408,7 @@ def main():
             print("  - data/url_reviews.csv (Yandex)")
             print("  - data/twogis_reviews.csv (2ГИС)")
             print("  - data/all_reviews.csv (объединенный)")
+            print("📊 Графики обновлены в: reports/images/")
             print("==========================================\n")
             
         elif args.business:
